@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rádio Web</title>
+<style>
+  :root {
+    --bg: #0f1115; --card: #181b22; --muted: #8a92a3; --text: #eef1f6;
+    --accent: #ff4d6d; --line: #262b36; --live: #22c55e;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--text); display: flex; justify-content: center; padding: 24px 16px;
+  }
+  .wrap { width: 100%; max-width: 440px; }
+  header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  header h1 { font-size: 1.1rem; margin: 0; }
+  header small { color: var(--muted); display: block; font-size: .8rem; }
+  .badge { font-size: .7rem; font-weight: 700; padding: 4px 8px; border-radius: 999px; background: var(--line); color: var(--muted); white-space: nowrap; }
+  .badge.live { background: var(--live); color: #04140a; }
+  .badge.off { background: #7f1d1d; color: #fecaca; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 20px; }
+  .art { width: 100%; aspect-ratio: 1; border-radius: 12px; object-fit: cover; background: var(--line); display: block; }
+  .title { font-size: 1.25rem; font-weight: 700; margin: 16px 0 4px; }
+  .artist { color: var(--muted); margin: 0; }
+  .progress { height: 4px; background: var(--line); border-radius: 4px; margin: 16px 0 6px; overflow: hidden; }
+  .progress > div { height: 100%; width: 0; background: var(--accent); transition: width .5s linear; }
+  .times { display: flex; justify-content: space-between; font-size: .75rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .controls { display: flex; align-items: center; gap: 14px; margin-top: 18px; }
+  .play {
+    width: 60px; height: 60px; border-radius: 50%; border: 0; background: var(--accent); color: #fff;
+    cursor: pointer; display: grid; place-items: center; flex: none;
+  }
+  .play:disabled { opacity: .5; cursor: wait; }
+  .play svg { width: 26px; height: 26px; fill: currentColor; }
+  input[type=range] { flex: 1; accent-color: var(--accent); }
+  select, input[type=text] {
+    background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 8px; font: inherit; width: 100%;
+  }
+  .meta { display: flex; justify-content: space-between; margin-top: 14px; font-size: .8rem; color: var(--muted); gap: 8px; }
+  h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 22px 0 10px; }
+  ul { list-style: none; padding: 0; margin: 0; }
+  li { display: flex; gap: 12px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); }
+  li:last-child { border-bottom: 0; }
+  li img { width: 44px; height: 44px; border-radius: 6px; object-fit: cover; background: var(--line); flex: none; }
+  li div { min-width: 0; }
+  li b, li span { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  li span { color: var(--muted); font-size: .85rem; }
+  details { margin-top: 18px; color: var(--muted); font-size: .85rem; }
+  details form { display: grid; gap: 8px; margin-top: 10px; }
+  details button { background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 9px; font: inherit; cursor: pointer; }
+  .err { color: #fca5a5; font-size: .85rem; margin-top: 10px; display: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1 id="stationName">Carregando…</h1>
+      <small id="stationDesc"></small>
+    </div>
+    <span class="badge" id="status">AUTO DJ</span>
+  </header>
+
+  <div class="card">
+    <img class="art" id="art" alt="Capa do álbum">
+    <p class="title" id="title">—</p>
+    <p class="artist" id="artist">—</p>
+
+    <div class="progress"><div id="bar"></div></div>
+    <div class="times"><span id="elapsed">0:00</span><span id="duration">0:00</span></div>
+
+    <div class="controls">
+      <button class="play" id="playBtn" aria-label="Tocar">
+        <svg id="playIcon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+      </button>
+      <input type="range" id="volume" min="0" max="1" step="0.01" value="0.8" aria-label="Volume">
+    </div>
+
+    <div class="meta">
+      <span id="listeners">👥 0 ouvintes</span>
+      <span id="playlist"></span>
+    </div>
+    <div style="margin-top:12px"><select id="mount" aria-label="Qualidade do stream"></select></div>
+    <p class="err" id="err"></p>
+  </div>
+
+  <h2>Próxima</h2>
+  <ul id="next"></ul>
+
+  <h2>Tocadas recentemente</h2>
+  <ul id="history"></ul>
+
+  <details>
+    <summary>Configurar estação</summary>
+    <form id="cfg">
+      <input type="text" name="server" placeholder="https://sua-radio.com" required>
+      <input type="text" name="station" placeholder="shortcode da estação" required>
+      <button type="submit">Salvar</button>
+    </form>
+  </details>
+</div>
+
+<script>
+// ===== Configuração =====
+// Também pode ser passada pela URL: index.html?server=https://minha.radio&station=minha_estacao
+const DEFAULTS = { server: "https://demo.azuracast.com", station: "azuratest_radio" };
+const POLL_MS = 15000;      // intervalo de atualização do now-playing
+const HISTORY_DEPTH = 5;
+
+const params = new URLSearchParams(location.search);
+const saved = (() => { try { return JSON.parse(localStorage.getItem("radioCfg")) || {}; } catch { return {}; } })();
+const SERVER = (params.get("server") || saved.server || DEFAULTS.server).replace(/\/+$/, "");
+const STATION = params.get("station") || saved.station || DEFAULTS.station;
+
+const $ = id => document.getElementById(id);
+const audio = new Audio();
+audio.preload = "none";
+audio.volume = +$("volume").value;
+
+let state = { elapsed: 0, duration: 0, fetchedAt: 0, songId: null };
+let streamUrl = null;
+
+const fmt = s => {
+  s = Math.max(0, Math.floor(s || 0));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+};
+const esc = t => String(t ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+
+function songItem(song, extra = "") {
+  return `<li><img src="${esc(song.art)}" alt="" loading="lazy">
+    <div><b>${esc(song.title || song.text)}</b><span>${esc(song.artist)}${extra}</span></div></li>`;
+}
+
+// ===== Busca do now-playing =====
+async function update() {
+  try {
+    const res = await fetch(`${SERVER}/api/nowplaying/${encodeURIComponent(STATION)}`, { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    render(await res.json());
+    $("err").style.display = "none";
+  } catch (e) {
+    $("err").textContent = `Não foi possível carregar a estação (${e.message}). Verifique o servidor e o shortcode.`;
+    $("err").style.display = "block";
+  }
+}
+
+function render(d) {
+  const { station, now_playing: np, playing_next: next, song_history: hist, listeners, live } = d;
+
+  $("stationName").textContent = station.name;
+  $("stationDesc").textContent = station.description || "";
+  document.title = `${np.song.title} — ${station.name}`;
+
+  // Status: offline / ao vivo / auto DJ
+  const st = $("status");
+  if (d.is_online === false) { st.textContent = "OFFLINE"; st.className = "badge off"; }
+  else if (live?.is_live) { st.textContent = `● AO VIVO: ${live.streamer_name}`; st.className = "badge live"; }
+  else { st.textContent = "AUTO DJ"; st.className = "badge"; }
+
+  // Faixa atual
+  const art = (live?.is_live && live.art) || np.song.art;
+  if ($("art").src !== art) $("art").src = art;
+  $("title").textContent = np.song.title || np.song.text;
+  $("artist").textContent = [np.song.artist, np.song.album].filter(Boolean).join(" · ");
+  $("listeners").textContent = `👥 ${listeners.current} ouvinte${listeners.current === 1 ? "" : "s"}`;
+  $("playlist").textContent = np.is_request ? "🎵 Pedido de ouvinte" : (np.playlist || "");
+
+  state = { elapsed: np.elapsed, duration: np.duration, fetchedAt: Date.now(), songId: np.song.id };
+  tick();
+
+  // Mounts (qualidades do stream)
+  const sel = $("mount");
+  if (!sel.options.length) {
+    const mounts = station.mounts?.length ? station.mounts : [{ url: station.listen_url, name: "Padrão", is_default: true }];
+    mounts.forEach(m => {
+      const o = new Option(m.bitrate ? `${m.bitrate} kbps ${String(m.format || "").toUpperCase()}` : m.name, m.url);
+      if (m.is_default) o.selected = true;
+      sel.add(o);
+    });
+    streamUrl = sel.value || station.listen_url;
+  }
+
+  // Próxima e histórico
+  $("next").innerHTML = next?.song ? songItem(next.song, next.playlist ? ` · ${esc(next.playlist)}` : "") : "<li><span>—</span></li>";
+  $("history").innerHTML = (hist || []).slice(0, HISTORY_DEPTH).map(h => songItem(h.song)).join("") || "<li><span>—</span></li>";
+
+  // Media Session (controles na tela de bloqueio / teclado)
+  if ("mediaSession" in navigator) {
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: np.song.title, artist: np.song.artist, album: station.name,
+      artwork: [{ src: art, sizes: "512x512" }]
+    });
+  }
+}
+
+// Progresso local entre uma busca e outra
+function tick() {
+  const el = Math.min(state.duration || Infinity, state.elapsed + (Date.now() - state.fetchedAt) / 1000);
+  $("elapsed").textContent = fmt(el);
+  $("duration").textContent = state.duration ? fmt(state.duration) : "∞";
+  $("bar").style.width = state.duration ? `${(el / state.duration) * 100}%` : "0";
+  // quando a música termina, atualiza logo em vez de esperar o próximo ciclo
+  if (state.duration && el >= state.duration && Date.now() - state.fetchedAt > 3000) {
+    state.fetchedAt = Date.now() + 1e9; // evita chamadas repetidas
+    setTimeout(update, 2000);
+  }
+}
+
+// ===== Player =====
+const ICON_PLAY = '<path d="M8 5v14l11-7z"/>';
+const ICON_PAUSE = '<path d="M6 5h4v14H6zM14 5h4v14h-4z"/>';
+const setIcon = playing => {
+  $("playIcon").innerHTML = playing ? ICON_PAUSE : ICON_PLAY;
+  $("playBtn").setAttribute("aria-label", playing ? "Pausar" : "Tocar");
+};
+
+async function play() {
+  if (!streamUrl) return;
+  // adiciona parâmetro para não tocar áudio "velho" do buffer ao retomar
+  audio.src = `${streamUrl}${streamUrl.includes("?") ? "&" : "?"}t=${Date.now()}`;
+  $("playBtn").disabled = true;
+  try { await audio.play(); } catch (e) { $("err").textContent = `Erro ao tocar: ${e.message}`; $("err").style.display = "block"; }
+  $("playBtn").disabled = false;
+}
+function stop() {
+  audio.pause();
+  audio.removeAttribute("src");
+  audio.load(); // fecha a conexão com o stream
+}
+
+$("playBtn").onclick = () => (audio.paused ? play() : stop());
+audio.onplaying = () => setIcon(true);
+audio.onpause = () => setIcon(false);
+audio.onerror = () => { if (audio.getAttribute("src")) { setIcon(false); $("err").textContent = "Falha no stream. Tente outra qualidade."; $("err").style.display = "block"; } };
+$("volume").oninput = e => (audio.volume = +e.target.value);
+$("mount").onchange = e => { streamUrl = e.target.value; if (!audio.paused) play(); };
+
+if ("mediaSession" in navigator) {
+  navigator.mediaSession.setActionHandler("play", play);
+  navigator.mediaSession.setActionHandler("pause", stop);
+  navigator.mediaSession.setActionHandler("stop", stop);
+}
+
+// ===== Configuração pela interface =====
+const form = $("cfg");
+form.server.value = SERVER;
+form.station.value = STATION;
+form.onsubmit = e => {
+  e.preventDefault();
+  try { localStorage.setItem("radioCfg", JSON.stringify({ server: form.server.value.trim(), station: form.station.value.trim() })); } catch {}
+  location.href = location.pathname; // recarrega sem parâmetros na URL
+};
+
+// ===== Início =====
+update();
+setInterval(update, POLL_MS);
+setInterval(tick, 1000);
+</script>
+</body>
+</html>
